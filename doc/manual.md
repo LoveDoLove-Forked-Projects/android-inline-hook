@@ -1710,15 +1710,15 @@ void shadowhook_dump_records(int fd, uint32_t item_flags);
 You can use `tools/record_parser.py` to parse operation records.
 
 - Before first use, please install the python3 capstone module: `python3 -m pip install capstone`
-
 - Adding the `-m` parameter to `record_parser.py` will output the corresponding function/variable/filename in the shadowhook source code, making it easier to read and compare the shadowhook source code. (This is not displayed by default)
+- When running `record_parser.py` with the `-a` flag, you can specify a `maps` file to be used as a reference during parsing. If an operation record shows the "target ELF" as "unknown," the script will attempt to look up the corresponding pathname in the `maps` file using the "target address" and display it.
 
 1. Parsing Multiple Operation Records at Once
 
 First, save multiple "operation records" in a file (e.g., `hook_records.txt`), with each line representing one operation record, and then execute:
 
 ```Shell
-./record_parser.py -i ./hook_records.txt
+./record_parser.py -a ./maps.txt -i ./hook_records.txt
 ```
 
 2. Parse one operation record at a time
@@ -1728,7 +1728,7 @@ You can directly enter the operation record in the command line, only one record
 Note: Please enclose the operation record in double quotes.
 
 ```Shell
-./record_parser.py -l "2026-05-29T04:05:14.948+00:00,libunittest.so,intercept_instr_addr,libunittest.so,test_a64_instr_cbz+8,700a4e2b14,700a4a88b8,4,0,b400007075d3deb0,7,B|arm64|hook;T|700a4e2b14|910000b4|99020016;X|70024e3578|0|f0473fa95000005800021fd648c3dfe372000000;N|72e3dfc348;E|72e3ebd940|f0477fa9510000b406000014f0473fa95100005820021fd664354e0270000000f0473fa95000005800025fd650354e0270000000;W|70024e3564|0|f0477fa96ffdff15;e|70024e3550|0|f0477fa971fdff15;R|700a4e2b18;L|72e3dfc348|700000589100005800021fd6ac17460a700000001057d105720000b4;G|700a4617ac;I|700a4a88b8;"
+./record_parser.py -a ./maps.txt -l "2026-05-29T04:05:14.948+00:00,libunittest.so,intercept_instr_addr,libunittest.so,test_a64_instr_cbz+8,700a4e2b14,700a4a88b8,4,0,b400007075d3deb0,7,B|arm64|hook;T|700a4e2b14|910000b4|99020016;X|70024e3578|0|f0473fa95000005800021fd648c3dfe372000000;N|72e3dfc348;E|72e3ebd940|f0477fa9510000b406000014f0473fa95100005820021fd664354e0270000000f0473fa95000005800025fd650354e0270000000;W|70024e3564|0|f0477fa96ffdff15;e|70024e3550|0|f0477fa971fdff15;R|700a4e2b18;L|72e3dfc348|700000589100005800021fd6ac17460a700000001057d105720000b4;G|700a4617ac;I|700a4a88b8;"
 ```
 
 

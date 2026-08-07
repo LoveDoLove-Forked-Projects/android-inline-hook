@@ -25,6 +25,7 @@
 import os
 import sys
 import argparse
+import bisect
 try:
     from capstone import *
     from capstone.arm64 import *
@@ -35,32 +36,50 @@ except ImportError:
     print(f"    {sys.executable} -m pip install capstone")
     sys.exit(1)
 
+
 g_more_info = False
+g_maps = []
+g_maps_starts = []
 
 BASE_SRC_URL = 'shadowhook/src/main/cpp'
 LOGCAT_TAG = 'shadowhook_tag:'
-
-class ItemInfo:
-    def __init__(self, tag, hex, op_only):
-        self.tag = tag
-        self.hex = hex
-        self.op_only = op_only
-
-ItemInfos = [ItemInfo("trace",               False, False),
-             ItemInfo("flags",               False, True ),
-             ItemInfo("stub",                True,  False),
-             ItemInfo("errno",               False, False),
-             ItemInfo("backup length",       False, True ),
-             ItemInfo("new address",         True,  True ),
-             ItemInfo("target address",      True,  True ),
-             ItemInfo("target symbol name",  False, True ),
-             ItemInfo("target library name", False, True ),
-             ItemInfo("operation type",      False, False),
-             ItemInfo("caller library name", False, False),
-             ItemInfo("timestamp",           False, False)]
-ITEM_TRACE_IDX = 0
-ITEM_FLAGS_IDX = 1
+ITEM_COUNT = 12
 ITEM_OP_IDX = 9
+
+
+def parse_maps(filepath):
+    global g_maps, g_maps_starts
+    entries = []
+    with open(filepath, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(None, 5)
+            if len(parts) < 5:
+                continue
+            addr_range = parts[0]
+            start_str, end_str = addr_range.split('-')
+            if len(parts) >= 6:
+                pathname = parts[5]
+            else:
+                pathname = f"<anonymous:{start_str}-{end_str}>"
+            entries.append((int(start_str, 16), int(end_str, 16), pathname))
+    entries.sort(key=lambda e: e[0])
+    g_maps = entries
+    g_maps_starts = [e[0] for e in entries]
+
+
+def lookup_addr(addr):
+    if not g_maps:
+        return None
+    idx = bisect.bisect_right(g_maps_starts, addr) - 1
+    if idx < 0:
+        return None
+    start, end, pathname = g_maps[idx]
+    if start <= addr < end:
+        return pathname
+    return None
 
 
 def parse_instr(code_str, base_str, arch):
@@ -316,29 +335,99 @@ def op_is_unop(op):
     return op == 'unhook' or op == 'unintercept'
 
 
-def parse_line(line, item_flags):
-    i = len(ItemInfos)
-    op = ''
+def check_flags(flags, idx):
+    return (flags >> idx) & 1
+
+
+def parse_line(line, flags):
+    item_ts = None
+    item_caller = None
+    item_op = None
+    item_target_lib = None   # op only
+    item_target_sym = None   # op only
+    item_target_addr = None  # op only
+    item_new_addr = None     # op only
+    item_backup_len = None   # op only
+    item_errno = None
+    item_stub = None
+    item_flags = None        # op only
+    item_trace = None
+
+    unop_mask = 0b101100000111
+
+    op_flags = int(flags, 2)
+    unop_flags = op_flags & unop_mask
+
+    i = -1
     for item in line.split(","):
-      i -= 1
-      while i >= 0 and (item_flags[i] != '1' or (op_is_unop(op) and ItemInfos[i].op_only)): i -= 1
-      if i < 0:
-          raise ValueError(f"format error: {item_flags}")
-      elif i == ITEM_TRACE_IDX:
-          print(f"* {ItemInfos[i].tag}")
-          parse_trace(item)
-      elif i == ITEM_FLAGS_IDX:
-          print(f"* {ItemInfos[i].tag:<20} : {parse_flags(item, op)}")
-      elif i == ITEM_OP_IDX:
-          op = item
-          print(f"* {ItemInfos[i].tag:<20} : {item}")
-      else:
-          print(f"* {ItemInfos[i].tag:<20} : {'0x' if ItemInfos[i].hex else ''}{item}")                
+        i += 1
+        while i < ITEM_COUNT and not check_flags(unop_flags if op_is_unop(item_op) else op_flags, i):
+            i += 1
+        if i >= ITEM_COUNT:
+            raise ValueError(f"format error: {flags}")
+        elif i == 0:
+            item_ts = item
+        elif i == 1:
+            item_caller = item
+        elif i == 2:
+            item_op = item
+        elif i == 3:
+            item_target_lib = item
+        elif i == 4:
+            item_target_sym = item
+        elif i == 5:
+            item_target_addr = item
+        elif i == 6:
+            item_new_addr = item
+        elif i == 7:
+            item_backup_len = item
+        elif i == 8:
+            item_errno = item
+        elif i == 9:
+            item_stub = item
+        elif i == 10:
+            item_flags = item
+        elif i == 11:
+            item_trace = item
+
+    item_flags = parse_flags(item_flags, item_op)
+
+    if item_target_lib == 'unknown' and item_target_addr is not None:
+        pathname = lookup_addr(int(item_target_addr, 16))
+        if pathname is not None:
+            item_target_lib = pathname + ' (found in /proc/self/maps)'
+
+    if item_ts is not None:
+        print(f"* timestamp            : {item_ts}")
+    if item_caller is not None:
+        print(f"* caller library name  : {item_caller}")
+    if item_op is not None:
+        print(f"* operation type       : {item_op}")
+    if item_target_lib is not None:
+        print(f"* target library name  : {item_target_lib}")
+    if item_target_sym is not None:
+        print(f"* target symbol name   : {item_target_sym}")
+    if item_target_addr is not None:
+        print(f"* target address       : 0x{item_target_addr}")
+    if item_new_addr is not None:
+        print(f"* new address          : 0x{item_new_addr}")
+    if item_backup_len is not None:
+        print(f"* backup length        : {item_backup_len}")
+    if item_errno is not None:
+        print(f"* errno                : {item_errno}")
+    if item_stub is not None:
+        print(f"* stub                 : 0x{item_stub}")
+    if item_flags is not None:
+        print(f"* flags                : {item_flags}")
+    if item_trace is not None:
+        print(f"* trace")
+        parse_trace(item_trace)
 
 
 def main():
     parser = argparse.ArgumentParser(description='shadowhook record parser.')
     parser.add_argument('-m', '--more-info', action='store_true', help='show more info')
+    parser.add_argument('-a', '--maps', default='', required=False, help='maps file (linux /proc/pid/maps format)')
     parser.add_argument('-f', '--item-flags', default='111111111111', required=False, help='record item flags')
     parser.add_argument('-i', '--input-file', default='./input.txt', required=False, help='record file')
     parser.add_argument('-l', '--input-line', default='', required=False, help='record line')
@@ -347,8 +436,11 @@ def main():
     global g_more_info
     if args.more_info: g_more_info = True
 
-    if len(args.item_flags) != len(ItemInfos):
-        raise ValueError(f"The item-flags must be {len(ItemInfos)} characters long")
+    if args.maps:
+        parse_maps(args.maps)
+
+    if len(args.item_flags) != ITEM_COUNT:
+        raise ValueError(f"The item-flags must be {ITEM_COUNT} characters long")
     if set(args.item_flags) > {'0', '1'}:
         raise ValueError(f"The item-flags can only contain 0 and 1.")
     if args.item_flags[ITEM_OP_IDX] != '1':

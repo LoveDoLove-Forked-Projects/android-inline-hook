@@ -1711,13 +1711,14 @@ void shadowhook_dump_records(int fd, uint32_t item_flags);
 
 - 第一次使用前请先安装 python3 capstone 模块：`python3 -m pip install capstone`
 - `record_parser.py` 加 `-m` 参数，会一起输出该部分对应到 shadowhook 源码中的逻辑的函数/变量/文件名，方便阅读和对照 shadowhook 源码。（默认不显示）
+- `record_parser.py` 加 `-a` 参数，可以指定一个 maps 文件，解析时会参考这个 maps 文件。如果遇到操作记录中“目标 ELF 为 unknown ”的情况，会尝试通过“目标地址”在 maps 文件中查找 pathname 并显示。
 
 1. 一次解析多条操作记录
 
 先把多条“操作记录”保存在一个文件中（比如 `hook_records.txt`），每一行是一条操作记录，然后执行：
 
 ```Shell
-./record_parser.py -i ./hook_records.txt
+./record_parser.py -a ./maps.txt -i ./hook_records.txt
 ```
 
 2. 一次解析一条操作记录
@@ -1727,7 +1728,7 @@ void shadowhook_dump_records(int fd, uint32_t item_flags);
 注意：操作记录请放在双引号中。
 
 ```Shell
-./record_parser.py -l "2026-05-29T04:05:14.948+00:00,libunittest.so,intercept_instr_addr,libunittest.so,test_a64_instr_cbz+8,700a4e2b14,700a4a88b8,4,0,b400007075d3deb0,7,B|arm64|hook;T|700a4e2b14|910000b4|99020016;X|70024e3578|0|f0473fa95000005800021fd648c3dfe372000000;N|72e3dfc348;E|72e3ebd940|f0477fa9510000b406000014f0473fa95100005820021fd664354e0270000000f0473fa95000005800025fd650354e0270000000;W|70024e3564|0|f0477fa96ffdff15;e|70024e3550|0|f0477fa971fdff15;R|700a4e2b18;L|72e3dfc348|700000589100005800021fd6ac17460a700000001057d105720000b4;G|700a4617ac;I|700a4a88b8;"
+./record_parser.py -a ./maps.txt -l "2026-05-29T04:05:14.948+00:00,libunittest.so,intercept_instr_addr,libunittest.so,test_a64_instr_cbz+8,700a4e2b14,700a4a88b8,4,0,b400007075d3deb0,7,B|arm64|hook;T|700a4e2b14|910000b4|99020016;X|70024e3578|0|f0473fa95000005800021fd648c3dfe372000000;N|72e3dfc348;E|72e3ebd940|f0477fa9510000b406000014f0473fa95100005820021fd664354e0270000000f0473fa95000005800025fd650354e0270000000;W|70024e3564|0|f0477fa96ffdff15;e|70024e3550|0|f0477fa971fdff15;R|700a4e2b18;L|72e3dfc348|700000589100005800021fd6ac17460a700000001057d105720000b4;G|700a4617ac;I|700a4a88b8;"
 ```
 
 # 已知问题
