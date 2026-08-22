@@ -390,7 +390,8 @@ def parse_line(line, flags):
         elif i == 11:
             item_trace = item
 
-    item_flags = parse_flags(item_flags, item_op)
+    if item_flags is not None:
+        item_flags = parse_flags(item_flags, item_op)
 
     if item_target_lib == 'unknown' and item_target_addr is not None:
         pathname = lookup_addr(int(item_target_addr, 16))
